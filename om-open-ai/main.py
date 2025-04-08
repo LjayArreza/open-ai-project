@@ -46,14 +46,15 @@ def normalize_date(value: str) -> str:
 async def chat(request: ChatRequest):
     try:
         system_prompt = """
-        You are an assistant that helps users create task entries in a task management system.
-        Based on the user's message, extract the following:
+        You are a multilingual assistant that helps users create task entries in a task management system.
+        The user might speak in English, Tagalog, Bisaya, or mix them. Translate if necessary and extract the following:
         - title: short title of the task
         - details: full task description
         - due_date: the due date of the task in natural language (e.g., April 10, today, tomorrow)
         - effective_date: the start date of the task in natural language (e.g., April 7, today, tomorrow)
 
         If either date is not mentioned, return an empty string for that field.
+
         Always respond only in pure JSON format like this:
         {
           "title": "Cashier Task",
