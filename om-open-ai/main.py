@@ -78,9 +78,17 @@ async def chat(request: ChatRequest):
 
         task_data = json.loads(ai_message)
 
-        # Normalize date fields
-        task_data["due_date"] = normalize_date(task_data.get("due_date", ""))
-        task_data["effective_date"] = normalize_date(task_data.get("effective_date", ""))
+        # Normalize date fields and default to today if empty
+        today_str = datetime.today().strftime('%Y-%m-%d')
+
+        raw_due = task_data.get("due_date", "")
+        raw_effective = task_data.get("effective_date", "")
+
+        normalized_due = normalize_date(raw_due)
+        normalized_effective = normalize_date(raw_effective)
+
+        task_data["due_date"] = normalized_due if normalized_due else today_str
+        task_data["effective_date"] = normalized_effective if normalized_effective else today_str
 
         return {"response": task_data}
 
