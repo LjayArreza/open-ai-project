@@ -6,7 +6,7 @@ import logging
 from dotenv import load_dotenv
 import json
 from datetime import datetime, timedelta
-from dateutil import parser as date_parser
+import parsedatetime as pdt  # ✅ New import
 
 load_dotenv()
 
@@ -17,6 +17,9 @@ client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 class ChatRequest(BaseModel):
     message: str
+
+# ✅ Use parsedatetime for natural date parsing
+cal = pdt.Calendar()
 
 def normalize_date(value: str) -> str:
     today = datetime.today()
@@ -32,12 +35,11 @@ def normalize_date(value: str) -> str:
         elif "tomorrow" in value_lower:
             return (today + timedelta(days=1)).strftime('%Y-%m-%d')
         else:
-            # Append current year if it's missing
-            try:
-                parsed = date_parser.parse(value, default=today.replace(month=1, day=1))
-                return parsed.strftime('%Y-%m-%d')
-            except Exception:
-                return ""
+            time_struct, parse_status = cal.parse(value)
+            if parse_status:
+                parsed_date = datetime(*time_struct[:6])
+                return parsed_date.strftime('%Y-%m-%d')
+            return ""
     except Exception as e:
         logging.warning(f"Failed to parse date: {value} -> {e}")
         return ""
