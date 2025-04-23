@@ -6,7 +6,7 @@ import logging
 from dotenv import load_dotenv
 import json
 from datetime import datetime, timedelta
-import parsedatetime as pdt  # ✅ New import
+import parsedatetime as pdt
 
 load_dotenv()
 
@@ -18,7 +18,16 @@ client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 class ChatRequest(BaseModel):
     message: str
 
-# ✅ Use parsedatetime for natural date parsing
+tagalog_weekdays = {
+    "lunes": "monday",
+    "martes": "tuesday",
+    "miyerkules": "wednesday",
+    "huwebes": "thursday",
+    "biyernes": "friday",
+    "sabado": "saturday",
+    "linggo": "sunday"
+}
+
 cal = pdt.Calendar()
 
 def normalize_date(value: str) -> str:
@@ -29,13 +38,17 @@ def normalize_date(value: str) -> str:
 
     value_lower = value.strip().lower()
 
+    for tagalog, english in tagalog_weekdays.items():
+        if tagalog in value_lower:
+            value_lower = value_lower.replace(tagalog, english)
+
     try:
         if "today" in value_lower:
             return today.strftime('%Y-%m-%d')
         elif "tomorrow" in value_lower:
             return (today + timedelta(days=1)).strftime('%Y-%m-%d')
         else:
-            time_struct, parse_status = cal.parse(value)
+            time_struct, parse_status = cal.parse(value_lower)
             if parse_status:
                 parsed_date = datetime(*time_struct[:6])
                 return parsed_date.strftime('%Y-%m-%d')
@@ -87,20 +100,34 @@ async def chat(request: ChatRequest):
 
         task_data = json.loads(ai_message)
 
-        # Normalize date fields and default to today if empty
+        task_data.setdefault("title", "")
+        task_data.setdefault("details", "")
+        task_data.setdefault("due_date", "")
+        task_data.setdefault("effective_date", "")
+
         today_str = datetime.today().strftime('%Y-%m-%d')
 
-        raw_due = task_data.get("due_date", "")
-        raw_effective = task_data.get("effective_date", "")
+        raw_due = task_data["due_date"]
+        raw_effective = task_data["effective_date"]
 
         normalized_due = normalize_date(raw_due)
         normalized_effective = normalize_date(raw_effective)
 
-        task_data["due_date"] = normalized_due if normalized_due else today_str
-        task_data["effective_date"] = normalized_effective if normalized_effective else today_str
+        if not raw_due and not raw_effective:
+            task_data["due_date"] = today_str
+            task_data["effective_date"] = today_str
+        elif normalized_due and not normalized_effective:
+            task_data["due_date"] = normalized_due
+            task_data["effective_date"] = normalized_due
+        elif normalized_effective and not normalized_due:
+            task_data["due_date"] = normalized_effective
+            task_data["effective_date"] = normalized_effective
+        else:
+            task_data["due_date"] = normalized_due or today_str
+            task_data["effective_date"] = normalized_effective or today_str
 
         return {"response": task_data}
 
     except Exception as e:
-        logging.error(f"Error during OpenAI API call: {e}")
+        logging.error(f"Error during OpenAI API call or processing: {e}")
         return {"error": str(e)}
