@@ -57,7 +57,7 @@ def normalize_date(value: str) -> str:
         logging.warning(f"Failed to parse date: {value} -> {e}")
         return ""
 
-@app.post("/chat")
+@app.post("/taskChat")
 async def chat(request: ChatRequest):
     try:
         system_prompt = """
@@ -73,15 +73,15 @@ async def chat(request: ChatRequest):
           - details: full task description
           - due_date: the due date of the task in natural language (e.g., April 10, today, tomorrow)
           - effective_date: the start date of the task in natural language (e.g., April 7, today, tomorrow)
-
-        If either date is not mentioned, return an empty string for that field.
+          - assigned_to: the full name of the person the task is assigned to, if mentioned. If not mentioned, use an empty string ""
 
         Respond ONLY in this exact pure JSON format:
         {
           "title": "Cashier Task",
           "details": "Manage cash transactions, provide customer service, and maintain records.",
           "due_date": "April 10",
-          "effective_date": "today"
+          "effective_date": "today",
+          "assigned_to": "Juan Dela Cruz"
         }
         """
 
@@ -91,7 +91,7 @@ async def chat(request: ChatRequest):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": request.message}
             ],
-            max_tokens=200,
+            max_tokens=300,
             temperature=0.5
         )
 
@@ -99,11 +99,12 @@ async def chat(request: ChatRequest):
         logging.info(f"AI Response: {ai_message}")
 
         task_data = json.loads(ai_message)
-
+      
         task_data.setdefault("title", "")
         task_data.setdefault("details", "")
         task_data.setdefault("due_date", "")
         task_data.setdefault("effective_date", "")
+        task_data.setdefault("assigned_to", "")
 
         today_str = datetime.today().strftime('%Y-%m-%d')
 
@@ -131,3 +132,4 @@ async def chat(request: ChatRequest):
     except Exception as e:
         logging.error(f"Error during OpenAI API call or processing: {e}")
         return {"error": str(e)}
+
