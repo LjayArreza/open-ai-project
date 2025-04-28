@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import json
 from datetime import datetime, timedelta
 import parsedatetime as pdt
+import pytz
 
 load_dotenv()
 
@@ -15,8 +16,7 @@ logging.basicConfig(level=logging.INFO)
 
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-class ChatRequest(BaseModel):
-    message: str
+roles = ["cashier", "manager", "driver", "engineer", "waiter", "supervisor", "accountant"]
 
 tagalog_weekdays = {
     "lunes": "monday",
@@ -30,8 +30,10 @@ tagalog_weekdays = {
 
 cal = pdt.Calendar()
 
+PH_TIMEZONE = pytz.timezone("Asia/Manila")
+
 def normalize_date(value: str) -> str:
-    today = datetime.today()
+    today = datetime.now(PH_TIMEZONE)
 
     if not value:
         return ""
@@ -51,11 +53,15 @@ def normalize_date(value: str) -> str:
             time_struct, parse_status = cal.parse(value_lower)
             if parse_status:
                 parsed_date = datetime(*time_struct[:6])
+                parsed_date = PH_TIMEZONE.localize(parsed_date)
                 return parsed_date.strftime('%Y-%m-%d')
             return ""
     except Exception as e:
         logging.warning(f"Failed to parse date: {value} -> {e}")
         return ""
+
+class ChatRequest(BaseModel):
+    message: str
 
 @app.post("/taskChat")
 async def chat(request: ChatRequest):
@@ -73,7 +79,9 @@ async def chat(request: ChatRequest):
           - details: full task description
           - due_date: the due date of the task in natural language (e.g., April 10, today, tomorrow)
           - effective_date: the start date of the task in natural language (e.g., April 7, today, tomorrow)
-          - assigned_to: the full name of the person the task is assigned to, if mentioned. If not mentioned, use an empty string ""
+          - assigned_to: the full name of the person the task is assigned to, if mentioned. If no name is mentioned, assign an empty string "" to this field.
+          - If no specific person is mentioned, check if the role is mentioned (e.g., cashier, manager, etc.). If it is, leave `assigned_to` empty.
+          - If the word "assign" is used or a person's name is included in the input, assign the task to that person.
 
         Respond ONLY in this exact pure JSON format:
         {
@@ -81,7 +89,7 @@ async def chat(request: ChatRequest):
           "details": "Manage cash transactions, provide customer service, and maintain records.",
           "due_date": "April 10",
           "effective_date": "today",
-          "assigned_to": "Juan Dela Cruz"
+          "assigned_to": ""
         }
         """
 
@@ -99,20 +107,27 @@ async def chat(request: ChatRequest):
         logging.info(f"AI Response: {ai_message}")
 
         task_data = json.loads(ai_message)
-      
+
         task_data.setdefault("title", "")
         task_data.setdefault("details", "")
         task_data.setdefault("due_date", "")
         task_data.setdefault("effective_date", "")
         task_data.setdefault("assigned_to", "")
 
-        today_str = datetime.today().strftime('%Y-%m-%d')
+        today_str = datetime.now(PH_TIMEZONE).strftime('%Y-%m-%d')
 
         raw_due = task_data["due_date"]
         raw_effective = task_data["effective_date"]
 
         normalized_due = normalize_date(raw_due)
         normalized_effective = normalize_date(raw_effective)
+
+        if "assign" in request.message.lower():
+            if task_data["assigned_to"] == "":
+                task_data["assigned_to"] = "Unknown Assignee" 
+
+        elif any(role in request.message.lower() for role in roles):
+            task_data["assigned_to"] = ""
 
         if not raw_due and not raw_effective:
             task_data["due_date"] = today_str
@@ -132,4 +147,3 @@ async def chat(request: ChatRequest):
     except Exception as e:
         logging.error(f"Error during OpenAI API call or processing: {e}")
         return {"error": str(e)}
-
