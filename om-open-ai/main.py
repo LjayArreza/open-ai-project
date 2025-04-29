@@ -29,8 +29,9 @@ tagalog_weekdays = {
 }
 
 cal = pdt.Calendar()
-
 PH_TIMEZONE = pytz.timezone("Asia/Manila")
+
+user_memory = {}  # Store last task per user_id
 
 def normalize_date(value: str) -> str:
     today = datetime.now(PH_TIMEZONE)
@@ -62,10 +63,14 @@ def normalize_date(value: str) -> str:
 
 class ChatRequest(BaseModel):
     message: str
+    user_id: str  # Added for per-user memory
 
 @app.post("/taskChat")
 async def chat(request: ChatRequest):
     try:
+        user_id = request.user_id
+        previous_task = user_memory.get(user_id)
+
         system_prompt = """
         You are a multilingual assistant that helps users create task entries in a task management system.
 
@@ -85,20 +90,27 @@ async def chat(request: ChatRequest):
 
         Respond ONLY in this exact pure JSON format:
         {
-          "title": "Cashier Task",
-          "details": "Manage cash transactions, provide customer service, and maintain records.",
-          "due_date": "April 10",
-          "effective_date": "today",
+          "title": "",
+          "details": "",
+          "due_date": "",
+          "effective_date": "",
           "assigned_to": ""
         }
         """
 
+        messages = [{"role": "system", "content": system_prompt}]
+
+        if previous_task:
+            messages.append({
+                "role": "user",
+                "content": f"Previously, the task was: {json.dumps(previous_task)}"
+            })
+
+        messages.append({"role": "user", "content": request.message})
+
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": request.message}
-            ],
+            messages=messages,
             max_tokens=300,
             temperature=0.5
         )
@@ -124,7 +136,7 @@ async def chat(request: ChatRequest):
 
         if "assign" in request.message.lower():
             if task_data["assigned_to"] == "":
-                task_data["assigned_to"] = "Unknown Assignee" 
+                task_data["assigned_to"] = "Unknown Assignee"
 
         elif any(role in request.message.lower() for role in roles):
             task_data["assigned_to"] = ""
@@ -141,6 +153,9 @@ async def chat(request: ChatRequest):
         else:
             task_data["due_date"] = normalized_due or today_str
             task_data["effective_date"] = normalized_effective or today_str
+
+        # Update the user's memory
+        user_memory[user_id] = task_data
 
         return {"response": task_data}
 
